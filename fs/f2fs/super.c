@@ -1366,7 +1366,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 	struct f2fs_sb_info *sbi;
 	struct f2fs_super_block *raw_super;
 	struct inode *root;
-	long err;
+	int err;
 	bool retry = true, need_fsck = false;
 	char *options = NULL;
 	int recovery, i, valid_super_block;
@@ -1591,7 +1591,7 @@ try_onemore:
 		if (err < 0) {
 			need_fsck = true;
 			f2fs_msg(sb, KERN_ERR,
-				"Cannot recover all fsync data errno=%ld", err);
+				"Cannot recover all fsync data errno=%d", err);
 			goto free_kobj;
 		}
 	} else {
@@ -1624,7 +1624,7 @@ try_onemore:
 	if (recovery && !f2fs_readonly(sb) && !bdev_read_only(sb->s_bdev)) {
 		err = f2fs_commit_super(sbi, true);
 		f2fs_msg(sb, KERN_INFO,
-			"Try to recover %dth superblock, ret: %ld",
+			"Try to recover %dth superblock, ret: %d",
 			sbi->valid_super_block ? 1 : 2, err);
 	}
 
