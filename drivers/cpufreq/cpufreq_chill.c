@@ -20,7 +20,7 @@
 
 /* Chill version macros */
 #define CHILL_VERSION_MAJOR			(1)
-#define CHILL_VERSION_MINOR			(6)
+#define CHILL_VERSION_MINOR			(8)
 
 /* Chill governor macros */
 #define DEF_FREQUENCY_UP_THRESHOLD		(85)
@@ -91,10 +91,12 @@ static void cs_check_cpu(int cpu, unsigned int load)
 			dbs_info->requested_freq += get_freq_target(cs_tuners, policy);
 
  		/* Make sure max hasn't been reached, otherwise increment boost_counter */
-		if (dbs_info->requested_freq >= policy->max)
+		if (dbs_info->requested_freq >= policy->max) {
 			dbs_info->requested_freq = policy->max;
-		else
+			boost_counter = 0;
+		} else {
 			boost_counter++;
+		}
 
 		__cpufreq_driver_target(policy, dbs_info->requested_freq,
 			CPUFREQ_RELATION_H);
@@ -115,6 +117,10 @@ static void cs_check_cpu(int cpu, unsigned int load)
 			dbs_info->requested_freq -= freq_target;
 		else
 			dbs_info->requested_freq = policy->min;
+
+		/* if we're going down, decrease boost_counter */
+		if (dbs_info->requested_freq < policy->cur && boost_counter > 0)
+			boost_counter--;
 
 		__cpufreq_driver_target(policy, dbs_info->requested_freq,
 				CPUFREQ_RELATION_L);
