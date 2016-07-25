@@ -19,17 +19,17 @@
 #endif
 
 /* Chill version macros */
-#define CHILL_VERSION_MAJOR			(1)
-#define CHILL_VERSION_MINOR			(7)
+#define CHILL_VERSION_MAJOR			(2)
+#define CHILL_VERSION_MINOR			(0)
 
 /* Chill governor macros */
 #define DEF_FREQUENCY_UP_THRESHOLD		(85)
-#define DEF_FREQUENCY_DOWN_THRESHOLD		(30)
-#define DEF_FREQUENCY_DOWN_THRESHOLD_SUSPENDED	(20)
+#define DEF_FREQUENCY_DOWN_THRESHOLD		(35)
+#define DEF_FREQUENCY_DOWN_THRESHOLD_SUSPENDED	(45)
 #define DEF_FREQUENCY_STEP			(5)
 #define DEF_SAMPLING_RATE			(20000)
 #define DEF_BOOST_ENABLED			(1)
-#define DEF_BOOST_COUNT				(7)
+#define DEF_BOOST_COUNT				(8)
 
 static DEFINE_PER_CPU(struct cs_cpu_dbs_info_s, cs_cpu_dbs_info);
 
@@ -65,15 +65,76 @@ static void cs_check_cpu(int cpu, unsigned int load)
 
 #ifdef CONFIG_POWERSUSPEND
 	/* Once min frequency is reached while screen off, stop taking load samples*/
-	if (power_suspended & policy->cur == policy->min)
+	if (power_suspended && policy->cur == policy->min)
 		return;
 #endif
+
 	/*
 	 * break out if we 'cannot' reduce the speed as the user might
 	 * want freq_step to be zero
 	 */
 	if (cs_tuners->freq_step == 0)
 		return;
+
+#ifdef CONFIG_POWERSUSPEND
+	/* Check for frequency decrease */
+	if (!power_suspended && load < cs_tuners->down_threshold) {
+		unsigned int freq_target;
+		/*
+		 * if we cannot reduce the frequency anymore, break out early
+		 */
+		if (policy->cur == policy->min)
+			return;
+
+		freq_target = get_freq_target(cs_tuners, policy);
+		if (dbs_info->requested_freq > freq_target)
+			dbs_info->requested_freq -= freq_target;
+		else
+			dbs_info->requested_freq = policy->min;
+
+		__cpufreq_driver_target(policy, dbs_info->requested_freq,
+				CPUFREQ_RELATION_L);
+		return;
+	} else if (power_suspended && load <= cs_tuners->down_threshold_suspended) {
+		unsigned int freq_target;
+		/*
+		 * if we cannot reduce the frequency anymore, break out early
+		 */
+		if (policy->cur == policy->min)
+			return;
+
+		freq_target = get_freq_target(cs_tuners, policy);
+		if (dbs_info->requested_freq > freq_target)
+			dbs_info->requested_freq -= freq_target;
+		else
+			dbs_info->requested_freq = policy->min;
+
+		__cpufreq_driver_target(policy, dbs_info->requested_freq,
+				CPUFREQ_RELATION_L);
+		return;
+	}
+
+#else
+	/* Check for frequency decrease */
+	if (load < cs_tuners->down_threshold) {
+		unsigned int freq_target;
+		/*
+		 * if we cannot reduce the frequency anymore, break out early
+		 */
+		if (policy->cur == policy->min)
+			return;
+
+		freq_target = get_freq_target(cs_tuners, policy);
+		if (dbs_info->requested_freq > freq_target)
+			dbs_info->requested_freq -= freq_target;
+		else
+			dbs_info->requested_freq = policy->min;
+
+		__cpufreq_driver_target(policy, dbs_info->requested_freq,
+				CPUFREQ_RELATION_L);
+		return;
+	}
+#endif
 
 	/* Check for frequency increase */
 	if (load > cs_tuners->up_threshold) {
@@ -95,39 +156,13 @@ static void cs_check_cpu(int cpu, unsigned int load)
 			dbs_info->requested_freq += get_freq_target(cs_tuners, policy);
 
  		/* Make sure max hasn't been reached, otherwise increment boost_counter */
-		if (dbs_info->requested_freq >= policy->max) {
+		if (dbs_info->requested_freq >= policy->max)
 			dbs_info->requested_freq = policy->max;
-			boost_counter = 0;
-		} else {
+		else
 			boost_counter++;
-		}
 
 		__cpufreq_driver_target(policy, dbs_info->requested_freq,
 			CPUFREQ_RELATION_H);
-		return;
-	}
-
-	/* Check for frequency decrease */
-	if (load < cs_tuners->down_threshold) {
-		unsigned int freq_target;
-		/*
-		 * if we cannot reduce the frequency anymore, break out early
-		 */
-		if (policy->cur == policy->min)
-			return;
-
-		freq_target = get_freq_target(cs_tuners, policy);
-		if (dbs_info->requested_freq > freq_target)
-			dbs_info->requested_freq -= freq_target;
-		else
-			dbs_info->requested_freq = policy->min;
-
-		/* if we're going down, decrease boost_counter */
-		if (dbs_info->requested_freq < policy->cur && boost_counter > 0)
-			boost_counter--;
-
-		__cpufreq_driver_target(policy, dbs_info->requested_freq,
-				CPUFREQ_RELATION_L);
 		return;
 	}
 }
@@ -347,7 +382,6 @@ show_store_one(cs, down_threshold);
 show_store_one(cs, down_threshold_suspended);
 show_store_one(cs, ignore_nice_load);
 show_store_one(cs, freq_step);
-declare_show_sampling_rate_min(cs);
 show_store_one(cs, boost_enabled);
 show_store_one(cs, boost_count);
 
@@ -357,12 +391,10 @@ gov_sys_pol_attr_rw(down_threshold);
 gov_sys_pol_attr_rw(down_threshold_suspended);
 gov_sys_pol_attr_rw(ignore_nice_load);
 gov_sys_pol_attr_rw(freq_step);
-gov_sys_pol_attr_ro(sampling_rate_min);
 gov_sys_pol_attr_rw(boost_enabled);
 gov_sys_pol_attr_rw(boost_count);
 
 static struct attribute *dbs_attributes_gov_sys[] = {
-	&sampling_rate_min_gov_sys.attr,
 	&sampling_rate_gov_sys.attr,
 	&up_threshold_gov_sys.attr,
 	&down_threshold_gov_sys.attr,
@@ -380,7 +412,6 @@ static struct attribute_group cs_attr_group_gov_sys = {
 };
 
 static struct attribute *dbs_attributes_gov_pol[] = {
-	&sampling_rate_min_gov_pol.attr,
 	&sampling_rate_gov_pol.attr,
 	&up_threshold_gov_pol.attr,
 	&down_threshold_gov_pol.attr,
