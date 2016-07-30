@@ -639,6 +639,12 @@ config SOUND_CONTROL_HAX_3_GPL
 	help
 	  High Perf Sound WCD93xx chipset sound control
 
+config MEMORY_STATE_TIME
+	tristate "Memory freq/bandwidth time statistics"
+	depends on PROFILING
+	help
+	  Memory time statistics exported to /sys/kernel/memory_state_time
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
